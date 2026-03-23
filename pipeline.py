@@ -4,7 +4,7 @@ import sqlite3
 import os
 from datetime import datetime
 
-# --- CONFIGURATION ---
+# Configurações do Pipeline
 API_URL = "https://api.coingecko.com/api/v3/coins/markets"
 PARAMS = {
     "vs_currency": "usd",
@@ -13,82 +13,57 @@ PARAMS = {
     "page": 1,
     "sparkline": "false"
 }
-DB_PATH = "data/crypto_vault.sqlite"
-CSV_PATH = "data/raw_data.csv"
+DB_PATH = "db/crypto_vault.sqlite"
+CSV_PATH = "data/crypto_data.csv"
 
-def extract_data():
-    """Fetches data from the Public CoinGecko API."""
-    print("Step 1: Extracting data from CoinGecko API...")
+def extract():
+    """Extrai dados brutos da API CoinGecko."""
+    print("Iniciando Extração...")
     try:
         response = requests.get(API_URL, params=PARAMS)
-        response.raise_for_status() # Raises an error for bad status codes
+        response.raise_for_status()
         return response.json()
     except Exception as e:
-        print(f"Error during extraction: {e}")
+        print(f"Erro na extração: {e}")
         return None
 
-def transform_data(raw_data):
-    """Cleans and structures the JSON response into a Pandas DataFrame."""
-    print("Step 2: Transforming data...")
+def transform(raw_data):
+    """Limpa e estrutura os dados brutos."""
+    print("Iniciando Transformação...")
     df = pd.DataFrame(raw_data)
     
-    # Selecting specific columns (Data Engineering: Schema selection)
-    columns_to_keep = [
-        'id', 'symbol', 'name', 'current_price', 
-        'market_cap', 'total_volume', 'price_change_percentage_24h'
-    ]
-    df = df[columns_to_keep]
+    # Seleção de colunas relevantes (Schema Enforcement)
+    cols = ['id', 'symbol', 'name', 'current_price', 'market_cap', 'total_volume', 'price_change_percentage_24h']
+    df = df[cols]
     
-    # Adding a 'load_timestamp' (Data Engineering: Audit columns)
+    # Adicionando metadados de processamento
     df['extracted_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # Rounding prices for cleanliness
+    # Arredondamento para facilitar a leitura
     df['current_price'] = df['current_price'].round(2)
     
     return df
 
-def load_data(df):
-    """Saves data to CSV and SQLite."""
-    print("Step 3: Loading data to storage...")
+def load(df):
+    """Salva os dados em CSV e Banco de Dados SQLite."""
+    print("Iniciando Carga...")
     
-    # Ensure the data directory exists
+    # Garantir que as pastas existem
     os.makedirs('data', exist_ok=True)
+    os.makedirs('db', exist_ok=True)
     
-    # 1. Save to CSV
+    # Salvar em CSV
     df.to_csv(CSV_PATH, index=False)
-    print(f" - Data saved to {CSV_PATH}")
     
-    # 2. Save to SQLite
+    # Salvar em SQLite
     conn = sqlite3.connect(DB_PATH)
-    # if_exists='replace' ensures we don't duplicate on every run for this beginner project
-    df.to_sql('top_cryptos', conn, if_exists='replace', index=False)
+    df.to_sql('cryptos', conn, if_exists='replace', index=False)
     conn.close()
-    print(f" - Data saved to {DB_PATH}")
-
-def explore_insights(df):
-    """Prints 3 basic insights to the console."""
-    print("\n--- DATA INSIGHTS ---")
     
-    # Insight 1: Total Market Cap of top 50
-    total_mcap = df['market_cap'].sum()
-    print(f"1. Total Market Cap of Top 50: ${total_mcap:,.2f}")
-    
-    # Insight 2: Top Gainer in last 24h
-    top_gainer = df.loc[df['price_change_percentage_24h'].idxmax()]
-    print(f"2. Top 24h Gainer: {top_gainer['name']} ({top_gainer['price_change_percentage_24h']:.2f}%)")
-    
-    # Insight 3: Average Price of Top 50
-    avg_price = df['current_price'].mean()
-    print(f"3. Average Price of Top 50 coins: ${avg_price:.2f}")
-
-def main():
-    # Execute the ETL process
-    data = extract_data()
-    if data:
-        df_cleaned = transform_data(data)
-        load_data(df_cleaned)
-        explore_insights(df_cleaned)
-        print("\nETL Pipeline completed successfully!")
+    print(f"Sucesso! Dados salvos em {CSV_PATH} e {DB_PATH}")
 
 if __name__ == "__main__":
-    main()
+    data = extract()
+    if data:
+        df_transformed = transform(data)
+        load(df_transformed)
